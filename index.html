@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Show Sync">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Show Sync</title>
+  <link rel="manifest" href="./manifest.json">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #000; --surface: #111; --surface2: #1a1a1a; --border: #2a2a2a;
+  --text: #f0f0f0; --muted: #666; --accent: #e8b800; --green: #00c853;
+  --red: #ff3b30; --font: system-ui,-apple-system,'Helvetica Neue',sans-serif;
+  --mono: 'Courier New','SF Mono',monospace;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text);
+  font-family: var(--font); -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%; }
+body { min-height: 100vh; overscroll-behavior: none; }
+.hidden { display: none !important; }
+
+/* SETUP */
+#setup-view { display: flex; flex-direction: column; min-height: 100vh; }
+.app-header { padding: 2rem 1.5rem 1.25rem;
+  padding-top: max(2rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border); }
+.app-header h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em;
+  color: var(--accent); line-height: 1; }
+.app-header p { font-size: .8rem; color: var(--muted); margin-top: .25rem;
+  letter-spacing: .04em; text-transform: uppercase; }
+.events-list { flex: 1; padding: 1rem 1.25rem; overflow-y: auto;
+  display: flex; flex-direction: column; gap: .6rem; }
+.empty-hint { color: var(--muted); text-align: center; margin-top: 4rem;
+  font-size: .9rem; line-height: 1.8; }
+.event-item { background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: .9rem 1rem; display: flex; align-items: center;
+  gap: .75rem; }
+.event-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
+.event-name { font-size: 1rem; font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.event-time { font-family: var(--mono); font-size: 1.15rem; color: var(--accent);
+  letter-spacing: .06em; }
+.event-meta { display: flex; flex-direction: column; align-items: flex-end;
+  gap: .4rem; flex-shrink: 0; }
+.audio-badge { font-size: .7rem; font-weight: 600; padding: .2rem .55rem;
+  border-radius: 99px; white-space: nowrap; }
+.audio-badge.ok { background: #00c85322; color: var(--green); }
+.audio-badge.missing { background: #ff3b3022; color: var(--red); }
+.btn-icon { background: none; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 50%; width: 2rem; height: 2rem; cursor: pointer; font-size: .75rem;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+.btn-icon:active { background: var(--surface2); }
+.setup-actions { padding: 1rem 1.25rem 1.25rem;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: .6rem;
+  border-top: 1px solid var(--border); }
+
+/* BUTTONS */
+.btn { width: 100%; padding: 1rem 1.5rem; border: none; border-radius: 14px;
+  font-size: 1rem; font-weight: 700; cursor: pointer; letter-spacing: .02em;
+  -webkit-tap-highlight-color: transparent; transition: opacity .1s; }
+.btn:active { opacity: .65; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #000; }
+.btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn-danger { background: var(--red); color: #fff; }
+
+/* SHOW */
+#show-view { display: flex; flex-direction: column; min-height: 100vh; background: var(--bg); }
+.clock-container { display: flex; flex-direction: column; align-items: center;
+  padding: 2.5rem 1.5rem 2rem;
+  padding-top: max(2.5rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border); }
+.clock { font-family: var(--mono); font-size: clamp(3rem,14vw,5.5rem); font-weight: 700;
+  letter-spacing: .03em; color: var(--accent); line-height: 1; text-align: center;
+  font-variant-numeric: tabular-nums; }
+.next-event-panel { margin-top: 2rem; text-align: center; width: 100%; }
+.next-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--muted); margin-bottom: .4rem; }
+.next-name { font-size: clamp(1.2rem,5vw,1.8rem); font-weight: 700; color: var(--text);
+  min-height: 1.4em; }
+.next-countdown { font-family: var(--mono); font-size: clamp(1.6rem,8vw,3rem);
+  font-weight: 700; color: var(--green); margin-top: .2rem; min-height: 1.3em;
+  transition: color .2s; }
+.next-countdown.urgent { color: var(--red); animation: blink .45s ease-in-out infinite alternate; }
+@keyframes blink { from { opacity: 1; } to { opacity: .35; } }
+.show-events-section { flex: 1; overflow-y: auto; padding: 0 1.25rem; }
+.section-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--muted); padding: 1rem 0 .5rem; }
+.show-events-list { display: flex; flex-direction: column; }
+.show-event-item { display: flex; align-items: center; gap: .75rem;
+  padding: .65rem 0; border-bottom: 1px solid var(--border); transition: opacity .4s; }
+.show-event-item.played { opacity: .35; }
+.show-event-item.missed { opacity: .25; }
+.show-event-icon { font-size: 1rem; width: 1.25rem; text-align: center; flex-shrink: 0; }
+.show-event-item.played .show-event-icon { color: var(--green); }
+.show-event-item.missed .show-event-icon { color: var(--red); }
+.show-event-item.pending .show-event-icon { color: var(--muted); }
+.show-event-name { flex: 1; font-size: .95rem; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.show-event-time { font-family: var(--mono); font-size: .85rem; color: var(--muted); flex-shrink: 0; }
+.show-actions { padding: 1rem 1.25rem 1.25rem;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); }
+
+/* MODAL */
+.modal { position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(0,0,0,.75);
+  display: flex; align-items: flex-end; z-index: 200;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.modal-content { background: var(--surface); border-radius: 22px 22px 0 0;
+  padding: 1.75rem 1.25rem 1.75rem;
+  padding-bottom: max(1.75rem, env(safe-area-inset-bottom));
+  width: 100%; display: flex; flex-direction: column; gap: 1rem;
+  border-top: 1px solid var(--border); max-height: 90vh; overflow-y: auto; }
+.modal-content h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: .25rem; }
+.form-field { display: flex; flex-direction: column; gap: .35rem; }
+.form-field > label { font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--muted); }
+.form-field input[type=text] { background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 11px; padding: .8rem 1rem; color: var(--text); font-size: 1.05rem;
+  font-family: var(--font); width: 100%; outline: none; -webkit-appearance: none; }
+.form-field input[type=text]:focus { border-color: var(--accent); }
+.form-field input[type=text]::placeholder { color: var(--muted); }
+.ts-group { display: flex; align-items: center; gap: .4rem; }
+.ts-group input[type=number] { background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 11px; padding: .8rem 0; color: var(--text); font-size: 1.4rem;
+  font-family: var(--mono); font-weight: 600; width: 3.8rem; text-align: center;
+  outline: none; -webkit-appearance: none; -moz-appearance: textfield; }
+.ts-group input[type=number]:focus { border-color: var(--accent); }
+.ts-group input[type=number]::placeholder { color: var(--muted); font-size: .9rem; font-weight: 400; }
+.ts-group input[type=number]::-webkit-inner-spin-button,
+.ts-group input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.ts-sep { font-size: 1.6rem; font-family: var(--mono); font-weight: 700;
+  color: var(--accent); line-height: 1; flex-shrink: 0; margin-bottom: 2px; }
+.file-btn-wrapper { display: flex; align-items: center; gap: .75rem; }
+.file-label-btn { display: inline-flex; align-items: center; gap: .4rem;
+  padding: .7rem 1.1rem; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 11px; color: var(--text); font-size: .9rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+.file-label-btn:active { opacity: .7; }
+#modal-file { display: none; }
+#selected-file-name { font-size: .82rem; color: var(--accent); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.modal-actions { display: flex; gap: .6rem; margin-top: .25rem; }
+.modal-actions .btn { flex: 1; }
+</style>
+</head>
+<body>
+
+  <div id="setup-view">
+    <header class="app-header">
+      <h1>Show Sync</h1>
+      <p id="app-version">v8 &mdash; Sincronizador de audio</p>
+    </header>
+    <div id="events-list" class="events-list"></div>
+    <div class="setup-actions">
+      <button id="add-event-btn" class="btn btn-secondary">+ Agregar evento</button>
+      <button id="start-show-btn" class="btn btn-primary">&#9654; INICIAR SHOW</button>
+    </div>
+  </div>
+
+  <div id="show-view" class="hidden">
+    <div class="clock-container">
+      <div id="clock-display" class="clock">--:--.--</div>
+      <div class="next-event-panel">
+        <div class="next-label">Proximo evento</div>
+        <div id="next-event-name" class="next-name">-</div>
+        <div id="next-event-countdown" class="next-countdown"></div>
+      </div>
+    </div>
+    <div class="show-events-section">
+      <div class="section-label">Eventos</div>
+      <div id="show-events-list" class="show-events-list"></div>
+    </div>
+    <div class="show-actions">
+      <button id="stop-show-btn" class="btn btn-danger">&#9632; DETENER</button>
+    </div>
+  </div>
+
+  <div id="add-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <h2>Nuevo evento</h2>
+      <form id="modal-form" novalidate>
+        <div class="form-field">
+          <label for="modal-name">Nombre</label>
+          <input id="modal-name" type="text" placeholder="Ej: Comienzo Show" autocomplete="off">
+        </div>
+        <div class="form-field">
+          <label>Timestamp</label>
+          <div class="ts-group">
+            <input id="modal-ts-h" type="number" min="0" max="23" placeholder="HH" inputmode="numeric" autocomplete="off">
+            <span class="ts-sep">:</span>
+            <input id="modal-ts-m" type="number" min="0" max="59" placeholder="MM" inputmode="numeric" autocomplete="off">
+            <span class="ts-sep">:</span>
+            <input id="modal-ts-s" type="number" min="0" max="59" placeholder="SS" inputmode="numeric" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Audio</label>
+          <div class="file-btn-wrapper">
+            <label class="file-label-btn" for="modal-file">&#9834; Seleccionar archivo</label>
+            <input id="modal-file" type="file" accept=".mp3,.m4a,.wav,.aac,.ogg,.flac,.opus,.mp4">
+            <span id="selected-file-name"></span>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancel-modal-btn" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<script>
+/* Error handler — in separate script so parse errors in app script are caught */
+var APP_VERSION = '8';
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function showError(msg) {
+  document.body.style.cssText = 'background:#111;color:#ff3b30;padding:1.5rem;font-family:monospace;white-space:pre-wrap;font-size:13px;min-height:100vh;word-break:break-word;overflow-y:auto';
+  document.body.innerHTML = '<b style="font-size:15px">Show Sync v' + APP_VERSION + ' — Error</b>\n\n' + escHtml(msg);
+}
+
+window.onerror = function(msg, src, line, col, err) {
+  /* iOS dispara "Script error." sin source desde el share sheet nativo — ignorar */
+  if (msg === 'Script error.' && !src && !line && !col && !err) return true;
+  var loc = (src || '?') + ':' + line + ':' + col;
+  var detail = err && err.stack ? err.stack : msg;
+  showError('window.onerror\nMensaje: ' + msg + '\nUbicacion: ' + loc + '\n\n' + detail);
+  return true;
+};
+
+window.addEventListener('unhandledrejection', function(e) {
+  var r = e.reason;
+  var msg = r ? (r.stack || r.message || String(r)) : 'rechazo de promesa sin razon';
+  showError('Promise rechazada:\n' + msg);
+});
+</script>
+
+<script>
+/* App — step-by-step init so we know exactly where it fails */
+var INIT_STEP = 'carga del script';
+
+try {
+
+/* ── IndexedDB ── */
+INIT_STEP = 'IndexedDB (definicion)';
+var DB_NAME = 'show-sync-db', DB_VERSION = 1, STORE = 'audios';
+
+function openDB() {
+  return new Promise(function(res, rej) {
+    var r = indexedDB.open(DB_NAME, DB_VERSION);
+    r.onupgradeneeded = function(e) { e.target.result.createObjectStore(STORE); };
+    r.onsuccess = function(e) { res(e.target.result); };
+    r.onerror = function(e) { rej(e.target.error); };
+  });
+}
+
+function saveAudio(id, buf) {
+  return openDB().then(function(db) {
+    return new Promise(function(res, rej) {
+      var tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(buf, id);
+      tx.oncomplete = res;
+      tx.onerror = function(e) { rej(e.target.error); };
+    });
+  });
+}
+
+function loadAudio(id) {
+  return openDB().then(function(db) {
+    return new Promise(function(res, rej) {
+      var tx = db.transaction(STORE, 'readonly');
+      var req = tx.objectStore(STORE).get(id);
+      req.onsuccess = function(e) { res(e.target.result !== undefined ? e.target.result : null); };
+      req.onerror = function(e) { rej(e.target.error); };
+    });
+  });
+}
+
+function deleteAudio(id) {
+  return openDB().then(function(db) {
+    return new Promise(function(res, rej) {
+      var tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = res;
+      tx.onerror = function(e) { rej(e.target.error); };
+    });
+  });
+}
+
+/* ── State ── */
+INIT_STEP = 'estado inicial';
+var events = [];
+var showEvents = [];
+var audioCtx = null;
+var scheduledSources = [];
+var rafId = null;
+var showActive = false;
+var wakeLock = null;
+var lastSecond = -1;
+
+/* ── DOM refs ── */
+INIT_STEP = 'referencias DOM';
+var setupView    = document.getElementById('setup-view');
+var showView     = document.getElementById('show-view');
+var eventsList   = document.getElementById('events-list');
+var modal        = document.getElementById('add-modal');
+var startBtn     = document.getElementById('start-show-btn');
+var stopBtn      = document.getElementById('stop-show-btn');
+var clockEl      = document.getElementById('clock-display');
+var nextName     = document.getElementById('next-event-name');
+var nextCd       = document.getElementById('next-event-countdown');
+var showListEl   = document.getElementById('show-events-list');
+var addBtn       = document.getElementById('add-event-btn');
+var modalForm    = document.getElementById('modal-form');
+var cancelBtn    = document.getElementById('cancel-modal-btn');
+var fileNameEl   = document.getElementById('selected-file-name');
+var nameInput    = document.getElementById('modal-name');
+var tsH          = document.getElementById('modal-ts-h');
+var tsM          = document.getElementById('modal-ts-m');
+var tsS          = document.getElementById('modal-ts-s');
+var fileInput    = document.getElementById('modal-file');
+
+/* Verify all elements exist */
+INIT_STEP = 'verificacion de elementos DOM';
+var domCheck = {
+  'setup-view': setupView, 'show-view': showView, 'events-list': eventsList,
+  'add-modal': modal, 'start-show-btn': startBtn, 'stop-show-btn': stopBtn,
+  'clock-display': clockEl, 'next-event-name': nextName,
+  'next-event-countdown': nextCd, 'show-events-list': showListEl,
+  'add-event-btn': addBtn, 'modal-form': modalForm,
+  'cancel-modal-btn': cancelBtn, 'selected-file-name': fileNameEl,
+  'modal-name': nameInput, 'modal-ts-h': tsH, 'modal-ts-m': tsM,
+  'modal-ts-s': tsS, 'modal-file': fileInput
+};
+var missing = [];
+var domKey;
+for (domKey in domCheck) {
+  if (!domCheck[domKey]) { missing.push(domKey); }
+}
+if (missing.length > 0) {
+  throw new Error('Elementos no encontrados: ' + missing.join(', '));
+}
+
+/* ── Helpers ── */
+INIT_STEP = 'funciones auxiliares';
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function generateId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try { return crypto.randomUUID(); } catch(e2) {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+function readTimestamp() {
+  var h = parseInt(tsH.value, 10);
+  var m = parseInt(tsM.value, 10);
+  var s = parseInt(tsS.value, 10);
+  if (isNaN(h) || isNaN(m) || isNaN(s)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) return null;
+  return pad2(h) + ':' + pad2(m) + ':' + pad2(s);
+}
+
+function pad2(n) {
+  return n < 10 ? '0' + n : String(n);
+}
+
+function statusIcon(st) {
+  if (st === 'played') return '&#10003;';
+  if (st === 'missed') return '&#10007;';
+  return '&#9675;';
+}
+
+/* ── Persistence ── */
+INIT_STEP = 'persistencia (loadState/saveState)';
+
+function loadState() {
+  try {
+    var raw = localStorage.getItem('show-sync-events');
+    events = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(events)) events = [];
+  } catch(e2) {
+    events = [];
+  }
+}
+
+function saveState() {
+  var data = [];
+  var i;
+  for (i = 0; i < events.length; i++) {
+    var ev = events[i];
+    data.push({ id: ev.id, name: ev.name, timestamp: ev.timestamp, hasAudio: ev.hasAudio });
+  }
+  localStorage.setItem('show-sync-events', JSON.stringify(data));
+}
+
+/* ── Setup view ── */
+INIT_STEP = 'renderSetup (definicion)';
+
+function renderSetup() {
+  eventsList.innerHTML = '';
+  if (!events.length) {
+    eventsList.innerHTML = '<p class="empty-hint">No hay eventos.<br>Agrega uno con el boton +</p>';
+    return;
+  }
+  var sorted = events.slice().sort(function(a, b) {
+    return a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0;
+  });
+  var i;
+  for (i = 0; i < sorted.length; i++) {
+    var ev = sorted[i];
+    var d = document.createElement('div');
+    d.className = 'event-item';
+    d.innerHTML =
+      '<div class="event-info">' +
+        '<span class="event-name">' + esc(ev.name) + '</span>' +
+        '<span class="event-time">' + esc(ev.timestamp) + '</span>' +
+      '</div>' +
+      '<div class="event-meta">' +
+        '<span class="audio-badge ' + (ev.hasAudio ? 'ok' : 'missing') + '">' +
+          (ev.hasAudio ? '&#9834; OK' : '&#9888; Sin audio') +
+        '</span>' +
+        '<button class="btn-icon delete-btn" data-id="' + esc(ev.id) + '">&#10005;</button>' +
+      '</div>';
+    eventsList.appendChild(d);
+  }
+}
+
+/* ── Event listeners ── */
+INIT_STEP = 'listener: eventsList click';
+eventsList.addEventListener('click', function(e) {
+  var btn = e.target;
+  /* Walk up to find delete button */
+  while (btn && btn !== eventsList) {
+    if (btn.className && btn.className.indexOf('delete-btn') >= 0) break;
+    btn = btn.parentNode;
+  }
+  if (!btn || btn === eventsList) return;
+  var id = btn.getAttribute('data-id');
+  var filtered = [];
+  var i;
+  for (i = 0; i < events.length; i++) {
+    if (events[i].id !== id) filtered.push(events[i]);
+  }
+  events = filtered;
+  deleteAudio(id).then(function() {
+    saveState();
+    renderSetup();
+  }).catch(function(e2) {
+    saveState();
+    renderSetup();
+  });
+});
+
+INIT_STEP = 'listener: addBtn click';
+addBtn.addEventListener('click', function() {
+  modalForm.reset();
+  fileNameEl.textContent = '';
+  modal.className = modal.className.replace(/\bhidden\b/g, '').trim();
+  setTimeout(function() { nameInput.focus(); }, 50);
+});
+
+INIT_STEP = 'listener: cancelBtn click';
+cancelBtn.addEventListener('click', function() {
+  if (modal.className.indexOf('hidden') < 0) {
+    modal.className = (modal.className + ' hidden').trim();
+  }
+});
+
+INIT_STEP = 'listener: modal backdrop click';
+modal.addEventListener('click', function(e) {
+  if (e.target === modal) {
+    if (modal.className.indexOf('hidden') < 0) {
+      modal.className = (modal.className + ' hidden').trim();
+    }
+  }
+});
+
+INIT_STEP = 'listener: fileInput change';
+fileInput.addEventListener('change', function(e) {
+  fileNameEl.textContent = (e.target.files && e.target.files[0]) ? e.target.files[0].name : '';
+});
+
+INIT_STEP = 'listener: modalForm submit';
+modalForm.addEventListener('submit', function(e) {
+  e.preventDefault();
+  var name = nameInput.value ? nameInput.value.trim() : '';
+  var timestamp = readTimestamp();
+  if (!name) { alert('Ingresa un nombre.'); return; }
+  if (!timestamp) { alert('Timestamp invalido.\nHH: 0-23  MM: 0-59  SS: 0-59'); return; }
+
+  var submitBtn = modalForm.querySelector('[type=submit]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  var id = generateId();
+  var newEv = { id: id, name: name, timestamp: timestamp, hasAudio: false };
+  var file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
+  var savePromise;
+  if (file) {
+    savePromise = new Promise(function(res, rej) {
+      var reader = new FileReader();
+      reader.onload = function(ev2) { res(ev2.target.result); };
+      reader.onerror = function() { rej(new Error('No se pudo leer el archivo')); };
+      reader.readAsArrayBuffer(file);
+    }).then(function(buf) {
+      return saveAudio(id, buf).then(function() {
+        newEv.hasAudio = true;
+      });
+    });
+  } else {
+    savePromise = Promise.resolve();
+  }
+
+  savePromise.then(function() {
+    events.push(newEv);
+    saveState();
+    modal.className = (modal.className + ' hidden').trim();
+    renderSetup();
+    if (submitBtn) submitBtn.disabled = false;
+  }).catch(function(err) {
+    alert('Error: ' + (err && err.message ? err.message : String(err)));
+    if (submitBtn) submitBtn.disabled = false;
+  });
+});
+
+/* ── iOS AudioContext keep-alive ── */
+INIT_STEP = 'iosKeepAlive (definicion)';
+
+function iosKeepAlive(ctx) {
+  if (!showActive || audioCtx !== ctx) return;
+  try {
+    var buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch(e2) {}
+  setTimeout(function() { iosKeepAlive(ctx); }, 20000);
+}
+
+/* ── Show ── */
+INIT_STEP = 'listener: startBtn / stopBtn';
+startBtn.addEventListener('click', startShow);
+stopBtn.addEventListener('click', stopShow);
+
+function getAudioContext() {
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) throw new Error('AudioContext no soportado en este navegador');
+  return new AC();
+}
+
+function startShow() {
+  if (!events.length) { alert('No hay eventos configurados.'); return; }
+  startBtn.disabled = true;
+  startBtn.textContent = 'Cargando...';
+
+  var ctx;
+  try {
+    ctx = getAudioContext();
+  } catch(e2) {
+    alert('Error creando AudioContext: ' + e2.message);
+    startBtn.disabled = false;
+    startBtn.textContent = '▶ INICIAR SHOW';
+    return;
+  }
+
+  audioCtx = ctx;
+
+  ctx.resume().then(function() {
+    iosKeepAlive(ctx);
+
+    var now = new Date();
+    showEvents = [];
+    scheduledSources = [];
+
+    var sorted = events.slice().sort(function(a, b) {
+      return a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0;
+    });
+
+    /* Load all audio then start */
+    var loadPromises = [];
+    var i;
+    for (i = 0; i < sorted.length; i++) {
+      loadPromises.push(prepareEvent(ctx, sorted[i], now));
+    }
+
+    return Promise.all(loadPromises);
+  }).then(function() {
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then(function(wl) {
+        wakeLock = wl;
+      }).catch(function() {});
+    }
+    lastSecond = -1;
+    showActive = true;
+    setupView.className = (setupView.className + ' hidden').trim();
+    showView.className = showView.className.replace(/\bhidden\b/g, '').trim();
+    renderShowLoop();
+  }).catch(function(err) {
+    alert('Error iniciando show: ' + (err && err.message ? err.message : String(err)));
+    if (audioCtx) { try { audioCtx.close(); } catch(e2) {} audioCtx = null; }
+    startBtn.disabled = false;
+    startBtn.textContent = '▶ INICIAR SHOW';
+  });
+}
+
+function prepareEvent(ctx, ev, now) {
+  var parts = ev.timestamp.split(':');
+  var hh = parseInt(parts[0], 10);
+  var mm = parseInt(parts[1], 10);
+  var ss = parseInt(parts[2], 10);
+  var fireAt = new Date(now.getTime());
+  fireAt.setHours(hh, mm, ss, 0);
+  var delayMs = fireAt.getTime() - now.getTime();
+
+  var entry = {
+    id: ev.id, name: ev.name, timestamp: ev.timestamp, hasAudio: ev.hasAudio,
+    fireAt: fireAt,
+    status: delayMs >= 0 ? 'pending' : 'missed'
+  };
+  showEvents.push(entry);
+
+  if (delayMs < 0 || !ev.hasAudio) return Promise.resolve();
+
+  return loadAudio(ev.id).then(function(raw) {
+    if (!raw) return;
+    return new Promise(function(res) {
+      ctx.decodeAudioData(raw.slice(0), function(audioBuf) {
+        var source = ctx.createBufferSource();
+        source.buffer = audioBuf;
+        source.connect(ctx.destination);
+        source.start(ctx.currentTime + Math.max(0.1, delayMs / 1000));
+        scheduledSources.push(source);
+        res();
+      }, function(decodeErr) {
+        console.error('decode error:', ev.name, decodeErr);
+        res();
+      });
+    });
+  }).catch(function(e2) {
+    console.error('load audio error:', ev.name, e2);
+  });
+}
+
+function stopShow() {
+  showActive = false;
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  var i;
+  for (i = 0; i < scheduledSources.length; i++) {
+    try { scheduledSources[i].stop(); } catch(e2) {}
+  }
+  scheduledSources = [];
+  showEvents = [];
+  if (audioCtx) { try { audioCtx.close(); } catch(e2) {} audioCtx = null; }
+  if (wakeLock) { try { wakeLock.release(); } catch(e2) {} wakeLock = null; }
+  showView.className = (showView.className + ' hidden').trim();
+  setupView.className = setupView.className.replace(/\bhidden\b/g, '').trim();
+  startBtn.disabled = false;
+  startBtn.textContent = '▶ INICIAR SHOW';
+}
+
+INIT_STEP = 'listener: visibilitychange';
+document.addEventListener('visibilitychange', function() {
+  if (!showActive) return;
+  if (document.visibilityState !== 'visible') return;
+  if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').then(function(wl) { wakeLock = wl; }).catch(function() {});
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(function() {});
+  }
+});
+
+/* ── Display loop ── */
+INIT_STEP = 'renderShowLoop (definicion)';
+
+function renderShowLoop() {
+  if (!showActive) return;
+  var now = new Date();
+  clockEl.textContent = pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' +
+    pad2(now.getSeconds()) + '.' + Math.floor(now.getMilliseconds() / 100);
+
+  var sec = Math.floor(now.getTime() / 1000);
+  if (sec !== lastSecond) { lastSecond = sec; updateShowDetails(now); }
+  rafId = requestAnimationFrame(renderShowLoop);
+}
+
+function updateShowDetails(now) {
+  var i;
+  for (i = 0; i < showEvents.length; i++) {
+    if (showEvents[i].status === 'pending' && now >= showEvents[i].fireAt) {
+      showEvents[i].status = 'played';
+    }
+  }
+
+  var next = null;
+  for (i = 0; i < showEvents.length; i++) {
+    if (showEvents[i].status === 'pending') { next = showEvents[i]; break; }
+  }
+
+  var allDone = true;
+  for (i = 0; i < showEvents.length; i++) {
+    if (showEvents[i].status === 'pending') { allDone = false; break; }
+  }
+
+  if (next) {
+    var diff = next.fireAt.getTime() - now.getTime();
+    var totalSec = Math.max(0, Math.ceil(diff / 1000));
+    var mins = Math.floor(totalSec / 60);
+    var secs = pad2(totalSec % 60);
+    nextName.textContent = next.name;
+    nextCd.textContent = 'en ' + (mins > 0 ? mins + ':' + secs : '0:' + secs);
+    if (diff < 5000) {
+      nextCd.className = 'next-countdown urgent';
+    } else {
+      nextCd.className = 'next-countdown';
+    }
+  } else if (allDone) {
+    nextName.textContent = 'Show completado';
+    nextCd.textContent = '';
+    nextCd.className = 'next-countdown';
+  }
+
+  var html = '';
+  for (i = 0; i < showEvents.length; i++) {
+    var ev = showEvents[i];
+    html += '<div class="show-event-item ' + ev.status + '">' +
+      '<span class="show-event-icon">' + statusIcon(ev.status) + '</span>' +
+      '<span class="show-event-name">' + esc(ev.name) + '</span>' +
+      '<span class="show-event-time">' + esc(ev.timestamp) + '</span>' +
+      '</div>';
+  }
+  showListEl.innerHTML = html;
+}
+
+/* ── Init ── */
+INIT_STEP = 'loadState';
+loadState();
+
+INIT_STEP = 'renderSetup';
+renderSetup();
+
+/* SW solo funciona con HTTPS o localhost */
+if ('serviceWorker' in navigator &&
+    (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('./sw.js').catch(function() {});
+}
+
+INIT_STEP = 'completo';
+
+} catch(initErr) {
+  showError(
+    'Error en paso de inicializacion: "' + INIT_STEP + '"\n\n' +
+    (initErr && initErr.stack ? initErr.stack : (initErr && initErr.message ? initErr.message : String(initErr)))
+  );
+}
+</script>
+</body>
+</html>

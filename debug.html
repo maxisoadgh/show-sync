@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debug</title>
+</head>
+<body style="background:#111;color:#eee;font-family:monospace;padding:1rem;font-size:14px">
+<h2>Debug Page v1</h2>
+<div id="log"></div>
+<script>
+function log(msg, color) {
+  var p = document.createElement('p');
+  p.style.color = color || '#eee';
+  p.style.margin = '0.25rem 0';
+  p.textContent = new Date().toISOString().slice(11,23) + ' ' + msg;
+  document.getElementById('log').appendChild(p);
+}
+
+window.onerror = function(msg, src, line, col, err) {
+  log('window.onerror: ' + msg + ' [' + (src || '?') + ':' + line + ':' + col + ']', '#ff3b30');
+  return true;
+};
+
+window.addEventListener('unhandledrejection', function(e) {
+  var r = e.reason;
+  log('unhandledrejection: ' + (r && r.message ? r.message : String(r)), '#ff9500');
+});
+
+log('Script inicio', '#0f0');
+log('navigator.onLine: ' + navigator.onLine);
+log('navigator.serviceWorker: ' + (typeof navigator.serviceWorker));
+log('window.indexedDB: ' + (typeof window.indexedDB));
+log('window.AudioContext: ' + (typeof window.AudioContext));
+log('window.webkitAudioContext: ' + (typeof window.webkitAudioContext));
+
+/* Test 1: SW registration */
+log('--- Test SW registration ---');
+if ('serviceWorker' in navigator) {
+  log('SW API existe, intentando registrar...');
+  navigator.serviceWorker.register('./sw.js').then(function(reg) {
+    log('SW registrado OK: ' + reg.scope, '#0f0');
+  }).catch(function(err) {
+    log('SW registro fallo (esperado en HTTP): ' + (err && err.message ? err.message : String(err)), '#ff9500');
+  });
+} else {
+  log('SW API no disponible', '#ff9500');
+}
+
+/* Test 2: IndexedDB */
+log('--- Test IndexedDB ---');
+try {
+  var r = indexedDB.open('debug-test', 1);
+  r.onsuccess = function(e) {
+    log('IndexedDB abierto OK', '#0f0');
+    e.target.result.close();
+  };
+  r.onerror = function(e) {
+    log('IndexedDB error: ' + e.target.error, '#ff3b30');
+  };
+} catch(e2) {
+  log('IndexedDB excepcion: ' + e2.message, '#ff3b30');
+}
+
+/* Test 3: localStorage */
+log('--- Test localStorage ---');
+try {
+  localStorage.setItem('debug-test', '1');
+  localStorage.removeItem('debug-test');
+  log('localStorage OK', '#0f0');
+} catch(e2) {
+  log('localStorage error: ' + e2.message, '#ff3b30');
+}
+
+/* Test 4: Promise */
+log('--- Test Promise ---');
+Promise.resolve('ok').then(function(v) {
+  log('Promise OK: ' + v, '#0f0');
+}).catch(function(e2) {
+  log('Promise error: ' + e2.message, '#ff3b30');
+});
+
+/* Test 5: FileReader */
+log('--- Test FileReader ---');
+try {
+  var fr = new FileReader();
+  log('FileReader OK', '#0f0');
+} catch(e2) {
+  log('FileReader error: ' + e2.message, '#ff3b30');
+}
+
+log('Script fin (sincrono)', '#0f0');
+</script>
+</body>
+</html>
