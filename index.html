@@ -81,7 +81,17 @@ body { min-height: 100vh; overscroll-behavior: none; }
 .clock { font-family: var(--mono); font-size: clamp(3rem,14vw,5.5rem); font-weight: 700;
   letter-spacing: .03em; color: var(--accent); line-height: 1; text-align: center;
   font-variant-numeric: tabular-nums; }
-.next-event-panel { margin-top: 2rem; text-align: center; width: 100%; }
+/* NOW PLAYING */
+#now-playing-panel { margin-top: 1.25rem; text-align: center; width: 100%; }
+.np-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--green); margin-bottom: .35rem; }
+.np-name { font-size: clamp(1rem,4vw,1.5rem); font-weight: 700; color: var(--text); }
+.np-bar-bg { background: var(--surface2); border-radius: 99px; height: 4px;
+  margin: .55rem 0 .3rem; overflow: hidden; }
+.np-bar { background: var(--green); height: 100%; border-radius: 99px; width: 0%; }
+.np-time { font-family: var(--mono); font-size: .85rem; color: var(--green); }
+
+.next-event-panel { margin-top: 1.5rem; text-align: center; width: 100%; }
 .next-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .12em;
   color: var(--muted); margin-bottom: .4rem; }
 .next-name { font-size: clamp(1.2rem,5vw,1.8rem); font-weight: 700; color: var(--text);
@@ -170,6 +180,12 @@ body { min-height: 100vh; overscroll-behavior: none; }
   <div id="show-view" class="hidden">
     <div class="clock-container">
       <div id="clock-display" class="clock">--:--.--</div>
+      <div id="now-playing-panel" style="display:none">
+        <div class="np-label">Reproduciendo</div>
+        <div id="np-name" class="np-name"></div>
+        <div class="np-bar-bg"><div id="np-bar" class="np-bar"></div></div>
+        <div id="np-time" class="np-time"></div>
+      </div>
       <div class="next-event-panel">
         <div class="next-label">Proximo evento</div>
         <div id="next-event-name" class="next-name">-</div>
@@ -323,6 +339,10 @@ var clockEl      = document.getElementById('clock-display');
 var nextName     = document.getElementById('next-event-name');
 var nextCd       = document.getElementById('next-event-countdown');
 var showListEl   = document.getElementById('show-events-list');
+var npPanel      = document.getElementById('now-playing-panel');
+var npName       = document.getElementById('np-name');
+var npBar        = document.getElementById('np-bar');
+var npTime       = document.getElementById('np-time');
 var addBtn       = document.getElementById('add-event-btn');
 var modalForm    = document.getElementById('modal-form');
 var cancelBtn    = document.getElementById('cancel-modal-btn');
@@ -340,6 +360,7 @@ var domCheck = {
   'add-modal': modal, 'start-show-btn': startBtn, 'stop-show-btn': stopBtn,
   'clock-display': clockEl, 'next-event-name': nextName,
   'next-event-countdown': nextCd, 'show-events-list': showListEl,
+  'now-playing-panel': npPanel, 'np-name': npName, 'np-bar': npBar, 'np-time': npTime,
   'add-event-btn': addBtn, 'modal-form': modalForm,
   'cancel-modal-btn': cancelBtn, 'selected-file-name': fileNameEl,
   'modal-name': nameInput, 'modal-ts-h': tsH, 'modal-ts-m': tsM,
@@ -651,11 +672,14 @@ function prepareEvent(ctx, ev, now) {
     if (!decodeP || typeof decodeP.then !== 'function') { return; }
     return decodeP.then(function(audioBuf) {
       try {
+        var startAt = ctx.currentTime + Math.max(0.1, delayMs / 1000);
         var source = ctx.createBufferSource();
         source.buffer = audioBuf;
         source.connect(ctx.destination);
-        source.start(ctx.currentTime + Math.max(0.1, delayMs / 1000));
+        source.start(startAt);
         scheduledSources.push(source);
+        entry.audioCtxStartTime = startAt;
+        entry.audioDuration = audioBuf.duration;
       } catch(e3) {}
     }).catch(function() {});
   }).catch(function() {});
@@ -693,11 +717,43 @@ document.addEventListener('visibilitychange', function() {
 /* ── Display loop ── */
 INIT_STEP = 'renderShowLoop (definicion)';
 
+function fmtTime(sec) {
+  var s = Math.floor(sec);
+  var m = Math.floor(s / 60);
+  return m + ':' + pad2(s % 60);
+}
+
+function updateNowPlaying() {
+  if (!audioCtx) { npPanel.style.display = 'none'; return; }
+  var ct = audioCtx.currentTime;
+  var playing = null;
+  var i;
+  for (i = showEvents.length - 1; i >= 0; i--) {
+    var ev = showEvents[i];
+    if (ev.audioCtxStartTime !== undefined && ev.audioDuration !== undefined) {
+      var elapsed = ct - ev.audioCtxStartTime;
+      if (elapsed >= 0 && elapsed < ev.audioDuration) { playing = ev; break; }
+    }
+  }
+  if (playing) {
+    var el = ct - playing.audioCtxStartTime;
+    var pct = Math.min(100, (el / playing.audioDuration) * 100);
+    npPanel.style.display = 'block';
+    npName.textContent = playing.name;
+    npBar.style.width = pct + '%';
+    npTime.textContent = fmtTime(el) + ' / ' + fmtTime(playing.audioDuration);
+  } else {
+    npPanel.style.display = 'none';
+  }
+}
+
 function renderShowLoop() {
   if (!showActive) return;
   var now = new Date();
   clockEl.textContent = pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' +
     pad2(now.getSeconds()) + '.' + Math.floor(now.getMilliseconds() / 100);
+
+  updateNowPlaying();
 
   var sec = Math.floor(now.getTime() / 1000);
   if (sec !== lastSecond) { lastSecond = sec; updateShowDetails(now); }
