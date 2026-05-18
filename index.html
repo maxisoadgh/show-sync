@@ -643,23 +643,22 @@ function prepareEvent(ctx, ev, now) {
   if (delayMs < 0 || !ev.hasAudio) return Promise.resolve();
 
   return loadAudio(ev.id).then(function(raw) {
-    if (!raw) return;
-    return new Promise(function(res) {
-      ctx.decodeAudioData(raw.slice(0), function(audioBuf) {
+    if (!raw) { return; }
+    var copyBuf;
+    try { copyBuf = raw.slice(0); } catch(e3) { return; }
+    var decodeP;
+    try { decodeP = ctx.decodeAudioData(copyBuf); } catch(e3) { return; }
+    if (!decodeP || typeof decodeP.then !== 'function') { return; }
+    return decodeP.then(function(audioBuf) {
+      try {
         var source = ctx.createBufferSource();
         source.buffer = audioBuf;
         source.connect(ctx.destination);
         source.start(ctx.currentTime + Math.max(0.1, delayMs / 1000));
         scheduledSources.push(source);
-        res();
-      }, function(decodeErr) {
-        console.error('decode error:', ev.name, decodeErr);
-        res();
-      });
-    });
-  }).catch(function(e2) {
-    console.error('load audio error:', ev.name, e2);
-  });
+      } catch(e3) {}
+    }).catch(function() {});
+  }).catch(function() {});
 }
 
 function stopShow() {
