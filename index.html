@@ -57,6 +57,16 @@ body { min-height: 100vh; overscroll-behavior: none; }
   display: flex; align-items: center; justify-content: center;
   -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
 .btn-icon:active { background: var(--surface2); }
+#offset-bar { display: flex; align-items: center; gap: .75rem;
+  padding: .65rem 1.25rem; border-top: 1px solid var(--border); }
+.offset-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); flex: 1; }
+.offset-display { font-family: var(--mono); font-size: 1.1rem; font-weight: 700;
+  color: var(--accent); min-width: 5.5rem; text-align: center; }
+.btn-offset { background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; width: 2.6rem; height: 2.6rem; font-size: 1.3rem; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; flex-shrink: 0; }
+.btn-offset:active { opacity: .6; }
 .setup-actions { padding: 1rem 1.25rem 1.25rem;
   padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
   display: flex; flex-direction: column; gap: .6rem;
@@ -81,6 +91,8 @@ body { min-height: 100vh; overscroll-behavior: none; }
 .clock { font-family: var(--mono); font-size: clamp(3rem,14vw,5.5rem); font-weight: 700;
   letter-spacing: .03em; color: var(--accent); line-height: 1; text-align: center;
   font-variant-numeric: tabular-nums; }
+#clock-offset-badge { font-family: var(--mono); font-size: .75rem; color: var(--muted);
+  margin-top: .4rem; letter-spacing: .04em; }
 /* NOW PLAYING */
 #now-playing-panel { margin-top: 1.25rem; text-align: center; width: 100%; }
 .np-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .12em;
@@ -168,9 +180,15 @@ body { min-height: 100vh; overscroll-behavior: none; }
   <div id="setup-view">
     <header class="app-header">
       <h1>Show Sync</h1>
-      <p id="app-version">v8 &mdash; Sincronizador de audio</p>
+      <p id="app-version">v9 &mdash; Sincronizador de audio</p>
     </header>
     <div id="events-list" class="events-list"></div>
+    <div id="offset-bar">
+      <span class="offset-label">Ajuste reloj</span>
+      <button id="offset-minus" class="btn-offset">&#8722;</button>
+      <span id="offset-display" class="offset-display">+0 ms</span>
+      <button id="offset-plus" class="btn-offset">+</button>
+    </div>
     <div class="setup-actions">
       <button id="add-event-btn" class="btn btn-secondary">+ Agregar evento</button>
       <button id="start-show-btn" class="btn btn-primary">&#9654; INICIAR SHOW</button>
@@ -180,6 +198,7 @@ body { min-height: 100vh; overscroll-behavior: none; }
   <div id="show-view" class="hidden">
     <div class="clock-container">
       <div id="clock-display" class="clock">--:--.--</div>
+      <div id="clock-offset-badge">+0 ms</div>
       <div id="now-playing-panel" style="display:none">
         <div class="np-label">Reproduciendo</div>
         <div id="np-name" class="np-name"></div>
@@ -237,7 +256,7 @@ body { min-height: 100vh; overscroll-behavior: none; }
 
 <script>
 /* Error handler — in separate script so parse errors in app script are caught */
-var APP_VERSION = '8';
+var APP_VERSION = '9';
 
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -326,6 +345,7 @@ var rafId = null;
 var showActive = false;
 var wakeLock = null;
 var lastSecond = -1;
+var clockOffset = 0;
 
 /* ── DOM refs ── */
 INIT_STEP = 'referencias DOM';
@@ -343,7 +363,11 @@ var npPanel      = document.getElementById('now-playing-panel');
 var npName       = document.getElementById('np-name');
 var npBar        = document.getElementById('np-bar');
 var npTime       = document.getElementById('np-time');
-var addBtn       = document.getElementById('add-event-btn');
+var addBtn        = document.getElementById('add-event-btn');
+var offsetMinus   = document.getElementById('offset-minus');
+var offsetDisplay = document.getElementById('offset-display');
+var offsetPlus    = document.getElementById('offset-plus');
+var clockOffsetBadge = document.getElementById('clock-offset-badge');
 var modalForm    = document.getElementById('modal-form');
 var cancelBtn    = document.getElementById('cancel-modal-btn');
 var fileNameEl   = document.getElementById('selected-file-name');
@@ -361,7 +385,10 @@ var domCheck = {
   'clock-display': clockEl, 'next-event-name': nextName,
   'next-event-countdown': nextCd, 'show-events-list': showListEl,
   'now-playing-panel': npPanel, 'np-name': npName, 'np-bar': npBar, 'np-time': npTime,
-  'add-event-btn': addBtn, 'modal-form': modalForm,
+  'add-event-btn': addBtn, 'offset-minus': offsetMinus,
+  'offset-display': offsetDisplay, 'offset-plus': offsetPlus,
+  'clock-offset-badge': clockOffsetBadge,
+  'modal-form': modalForm,
   'cancel-modal-btn': cancelBtn, 'selected-file-name': fileNameEl,
   'modal-name': nameInput, 'modal-ts-h': tsH, 'modal-ts-m': tsM,
   'modal-ts-s': tsS, 'modal-file': fileInput
@@ -422,6 +449,12 @@ function loadState() {
   } catch(e2) {
     events = [];
   }
+  clockOffset = parseInt(localStorage.getItem('show-sync-offset') || '0', 10);
+  if (isNaN(clockOffset)) clockOffset = 0;
+}
+
+function saveOffset() {
+  localStorage.setItem('show-sync-offset', String(clockOffset));
 }
 
 function saveState() {
@@ -433,6 +466,33 @@ function saveState() {
   }
   localStorage.setItem('show-sync-events', JSON.stringify(data));
 }
+
+/* ── Offset bar ── */
+INIT_STEP = 'offset bar (listeners)';
+
+function applyOffset(ms) {
+  clockOffset = Math.max(-9990, Math.min(9990, ms));
+  var label = (clockOffset >= 0 ? '+' : '') + clockOffset + ' ms';
+  offsetDisplay.textContent = label;
+  clockOffsetBadge.textContent = 'ajuste: ' + label;
+  saveOffset();
+}
+
+applyOffset(clockOffset);
+
+offsetMinus.addEventListener('click', function() { applyOffset(clockOffset - 10); });
+offsetPlus.addEventListener('click',  function() { applyOffset(clockOffset + 10); });
+
+var offsetLongTimer = null;
+function startOffsetLong() { offsetLongTimer = setTimeout(function() { applyOffset(0); }, 600); }
+function cancelOffsetLong() { clearTimeout(offsetLongTimer); }
+[offsetMinus, offsetPlus].forEach(function(btn) {
+  btn.addEventListener('touchstart', startOffsetLong, { passive: true });
+  btn.addEventListener('touchend',   cancelOffsetLong);
+  btn.addEventListener('mousedown',  startOffsetLong);
+  btn.addEventListener('mouseup',    cancelOffsetLong);
+  btn.addEventListener('mouseleave', cancelOffsetLong);
+});
 
 /* ── Setup view ── */
 INIT_STEP = 'renderSetup (definicion)';
@@ -652,7 +712,7 @@ function prepareEvent(ctx, ev, now) {
   var ss = parseInt(parts[2], 10);
   var fireAt = new Date(now.getTime());
   fireAt.setHours(hh, mm, ss, 0);
-  var delayMs = fireAt.getTime() - now.getTime();
+  var delayMs = fireAt.getTime() - now.getTime() + clockOffset;
 
   var entry = {
     id: ev.id, name: ev.name, timestamp: ev.timestamp, hasAudio: ev.hasAudio,
@@ -749,7 +809,7 @@ function updateNowPlaying() {
 
 function renderShowLoop() {
   if (!showActive) return;
-  var now = new Date();
+  var now = new Date(Date.now() + clockOffset);
   clockEl.textContent = pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' +
     pad2(now.getSeconds()) + '.' + Math.floor(now.getMilliseconds() / 100);
 
